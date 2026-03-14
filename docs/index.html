@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MouseKeyboard — Control your Mac mouse from the keyboard</title>
+  <meta name="description" content="A free, open-source macOS app that lets you move the cursor, click, scroll, and drag using only your keyboard." />
+  <meta property="og:title" content="MouseKeyboard" />
+  <meta property="og:description" content="Control your Mac mouse entirely from the keyboard." />
+  <meta property="og:type" content="website" />
+
+  <style>
+    /* ── Reset & base ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #07070f;
+      --bg-section:   #0c0c18;
+      --card:         rgba(255,255,255,0.04);
+      --card-hover:   rgba(255,255,255,0.07);
+      --border:       rgba(255,255,255,0.08);
+      --border-light: rgba(255,255,255,0.14);
+      --text:         #eaeaf5;
+      --text-muted:   #6a6a84;
+      --text-dim:     #3e3e56;
+      --accent:       #7c6fef;
+      --accent-2:     #3ecfcf;
+      --accent-glow:  rgba(124,111,239,0.35);
+      --accent-2-glow:rgba(62,207,207,0.3);
+      --key:          #13132a;
+      --key-border:   rgba(255,255,255,0.1);
+      --r:            14px;
+      --r-sm:         8px;
+      --r-xs:         6px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: #a096ff; }
+
+    /* ── Noise texture overlay ─────────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    /* ── Layout helpers ────────────────────────────────────────────────────── */
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+    .section   { padding: 100px 0; }
+
+    /* ── Gradient blobs ────────────────────────────────────────────────────── */
+    .blob {
+      position: absolute; border-radius: 50%;
+      filter: blur(120px); pointer-events: none; z-index: 0;
+    }
+    .blob-1 { width: 600px; height: 600px; background: rgba(124,111,239,0.12); top: -200px; left: -200px; }
+    .blob-2 { width: 500px; height: 500px; background: rgba(62,207,207,0.08);  top: 200px;  right: -150px; }
+
+    /* ── Nav ───────────────────────────────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      padding: 16px 0;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      background: rgba(7,7,15,0.7);
+      border-bottom: 1px solid var(--border);
+    }
+    nav .inner {
+      max-width: 1080px; margin: 0 auto; padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 17px; font-weight: 700; color: var(--text);
+    }
+    .nav-logo span { font-size: 22px; }
+    .nav-links { display: flex; align-items: center; gap: 28px; }
+    .nav-links a { font-size: 14px; color: var(--text-muted); font-weight: 500; transition: color .2s; }
+    .nav-links a:hover { color: var(--text); }
+    .nav-gh {
+      display: flex; align-items: center; gap: 7px;
+      padding: 7px 14px; border-radius: var(--r-xs);
+      border: 1px solid var(--border-light);
+      background: var(--card); font-size: 13px; font-weight: 600;
+      color: var(--text) !important; transition: background .2s, border-color .2s;
+    }
+    .nav-gh:hover { background: var(--card-hover); border-color: var(--accent); }
+    .nav-gh svg { flex-shrink: 0; }
+
+    /* ── Hero ──────────────────────────────────────────────────────────────── */
+    #hero {
+      min-height: 100vh; display: flex; align-items: center;
+      padding: 120px 0 80px; overflow: hidden; position: relative;
+    }
+    .hero-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 14px; border-radius: 100px;
+      border: 1px solid rgba(124,111,239,0.35);
+      background: rgba(124,111,239,0.1);
+      font-size: 12px; font-weight: 600; color: var(--accent);
+      letter-spacing: .04em; text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+    .hero-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+
+    .hero-title {
+      font-size: clamp(44px, 6vw, 72px);
+      font-weight: 800; line-height: 1.08; letter-spacing: -.03em;
+      color: var(--text); margin-bottom: 20px;
+    }
+    .hero-title .grad {
+      background: linear-gradient(135deg, #7c6fef 0%, #3ecfcf 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-sub {
+      font-size: 18px; color: var(--text-muted); line-height: 1.65;
+      max-width: 460px; margin-bottom: 40px;
+    }
+    .hero-cta { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 9px;
+      padding: 14px 28px; border-radius: var(--r-sm);
+      background: linear-gradient(135deg, #7c6fef, #5d52cc);
+      color: #fff; font-weight: 700; font-size: 15px;
+      box-shadow: 0 0 40px var(--accent-glow);
+      transition: transform .2s, box-shadow .2s, filter .2s;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 60px var(--accent-glow); filter: brightness(1.1); color: #fff; }
+    .btn-primary:active { transform: translateY(0); }
+
+    .btn-secondary {
+      display: inline-flex; align-items: center; gap: 9px;
+      padding: 14px 24px; border-radius: var(--r-sm);
+      border: 1px solid var(--border-light); background: var(--card);
+      color: var(--text); font-weight: 600; font-size: 15px;
+      transition: background .2s, border-color .2s;
+    }
+    .btn-secondary:hover { background: var(--card-hover); border-color: var(--border-light); color: var(--text); }
+
+    .hero-meta { margin-top: 32px; font-size: 13px; color: var(--text-dim); }
+    .hero-meta span { margin: 0 8px; }
+
+    /* ── Keyboard demo ─────────────────────────────────────────────────────── */
+    .demo-wrap {
+      position: relative; display: flex; flex-direction: column;
+      align-items: center; gap: 20px;
+    }
+
+    /* Mini screen */
+    .mini-screen {
+      width: 100%; aspect-ratio: 16/10; max-width: 440px;
+      background: #0e0e1e; border-radius: var(--r);
+      border: 1px solid var(--border-light);
+      box-shadow: 0 0 60px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.04);
+      overflow: hidden; position: relative;
+    }
+    .screen-bar {
+      height: 28px; background: #1a1a2e;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 12px; gap: 7px;
+    }
+    .screen-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .screen-dot:nth-child(1) { background: #ff5f57; }
+    .screen-dot:nth-child(2) { background: #febc2e; }
+    .screen-dot:nth-child(3) { background: #28c840; }
+
+    .screen-body {
+      position: absolute; top: 28px; left: 0; right: 0; bottom: 0;
+      background: radial-gradient(ellipse at 30% 40%, #12122a 0%, #07070f 70%);
+    }
+
+    /* Cursor */
+    #cursor {
+      position: absolute;
+      width: 16px; height: 20px; pointer-events: none;
+      transition: left .25s cubic-bezier(.4,0,.2,1), top .25s cubic-bezier(.4,0,.2,1);
+      filter: drop-shadow(0 0 6px var(--accent));
+    }
+    #cursor svg { width: 100%; height: 100%; }
+
+    /* Click ripple */
+    #click-ripple {
+      position: absolute; width: 0; height: 0;
+      border-radius: 50%; background: rgba(124,111,239,.4);
+      transform: translate(-50%,-50%); pointer-events: none; opacity: 0;
+    }
+
+    /* Keyboard */
+    .kb {
+      width: 100%; max-width: 440px;
+      background: #0e0e1e; border: 1px solid var(--border-light);
+      border-radius: var(--r); padding: 16px;
+      box-shadow: 0 0 40px rgba(0,0,0,.6);
+    }
+    .kb-row { display: flex; gap: 6px; margin-bottom: 6px; justify-content: center; }
+    .key {
+      display: flex; align-items: center; justify-content: center;
+      height: 38px; min-width: 38px; padding: 0 10px;
+      background: var(--key); border: 1px solid var(--key-border);
+      border-radius: var(--r-xs); border-bottom: 3px solid rgba(0,0,0,.4);
+      font-size: 12px; font-weight: 600; color: var(--text-muted);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', monospace;
+      transition: background .15s, border-color .15s, color .15s, box-shadow .15s, transform .1s;
+      user-select: none; cursor: default; white-space: nowrap;
+    }
+    .key.wide { min-width: 60px; }
+    .key.xl   { min-width: 90px; }
+    .key.spacer { background: transparent; border-color: transparent; pointer-events: none; }
+
+    .key.lit {
+      background: rgba(124,111,239,.25);
+      border-color: var(--accent);
+      color: #a096ff;
+      box-shadow: 0 0 16px var(--accent-glow);
+    }
+    .key.lit-2 {
+      background: rgba(62,207,207,.2);
+      border-color: var(--accent-2);
+      color: var(--accent-2);
+      box-shadow: 0 0 16px var(--accent-2-glow);
+    }
+    .key.pressed { transform: translateY(2px); }
+
+    .demo-label {
+      font-size: 13px; color: var(--text-muted); text-align: center;
+      min-height: 20px; transition: opacity .3s;
+    }
+    .demo-label strong { color: var(--accent); }
+
+    /* ── Section header ────────────────────────────────────────────────────── */
+    .section-tag {
+      display: inline-block; font-size: 11px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 800; letter-spacing: -.025em;
+      color: var(--text); line-height: 1.15; margin-bottom: 16px;
+    }
+    .section-sub {
+      font-size: 17px; color: var(--text-muted); max-width: 520px; line-height: 1.65;
+    }
+    .section-header { margin-bottom: 60px; }
+    .section-header.centered { text-align: center; }
+    .section-header.centered .section-sub { margin: 0 auto; }
+
+    /* ── Features ──────────────────────────────────────────────────────────── */
+    #features { background: var(--bg-section); }
+    .features-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+    }
+    .feat-card {
+      padding: 28px; border-radius: var(--r);
+      background: var(--card); border: 1px solid var(--border);
+      transition: background .25s, border-color .25s, transform .25s;
+      position: relative; overflow: hidden;
+    }
+    .feat-card::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(circle at 0 0, var(--accent-glow), transparent 60%);
+      opacity: 0; transition: opacity .3s;
+    }
+    .feat-card:hover { background: var(--card-hover); border-color: var(--border-light); transform: translateY(-3px); }
+    .feat-card:hover::before { opacity: 1; }
+
+    .feat-icon {
+      width: 46px; height: 46px; border-radius: var(--r-sm);
+      background: rgba(124,111,239,.15); border: 1px solid rgba(124,111,239,.25);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; margin-bottom: 18px;
+    }
+    .feat-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .feat-desc  { font-size: 14px; color: var(--text-muted); line-height: 1.65; }
+
+    /* ── Bindings ──────────────────────────────────────────────────────────── */
+    #bindings { position: relative; overflow: hidden; }
+
+    .bindings-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start; }
+
+    .bind-table { width: 100%; border-collapse: collapse; }
+    .bind-table th {
+      text-align: left; font-size: 11px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
+      color: var(--text-dim); padding: 0 0 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .bind-table td {
+      padding: 13px 0; border-bottom: 1px solid var(--border);
+      font-size: 14px; vertical-align: middle;
+    }
+    .bind-table td:first-child { color: var(--text-muted); width: 55%; }
+    .bind-table td:last-child  { text-align: right; }
+
+    .bind-keys { display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; }
+    .kbadge {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 3px 9px; border-radius: 5px; min-width: 28px;
+      background: var(--key); border: 1px solid var(--key-border);
+      border-bottom: 2px solid rgba(0,0,0,.5);
+      font-size: 12px; font-weight: 700; color: var(--text);
+      font-family: 'SF Mono', ui-monospace, monospace;
+    }
+    .kbadge.accent { background: rgba(124,111,239,.18); border-color: rgba(124,111,239,.4); color: #a096ff; }
+    .kbadge.teal   { background: rgba(62,207,207,.12);  border-color: rgba(62,207,207,.3);  color: var(--accent-2); }
+
+    .bind-note {
+      margin-top: 24px; padding: 16px 20px;
+      background: rgba(124,111,239,.08); border: 1px solid rgba(124,111,239,.2);
+      border-radius: var(--r-sm); font-size: 13px; color: var(--text-muted); line-height: 1.6;
+    }
+    .bind-note strong { color: var(--accent); }
+
+    /* ── How it works ──────────────────────────────────────────────────────── */
+    #how { background: var(--bg-section); }
+    .steps { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
+    .step {
+      padding: 32px 28px; border-radius: var(--r);
+      background: var(--card); border: 1px solid var(--border);
+      text-align: center; position: relative;
+    }
+    .step-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 44px; height: 44px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #5d52cc);
+      color: #fff; font-weight: 800; font-size: 18px;
+      margin-bottom: 18px; box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .step-title { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+    .step-desc  { font-size: 14px; color: var(--text-muted); line-height: 1.65; }
+    .step-arrow {
+      position: absolute; top: 50%; right: -13px; transform: translateY(-50%);
+      font-size: 20px; color: var(--text-dim); z-index: 1;
+    }
+
+    /* ── Install ───────────────────────────────────────────────────────────── */
+    #install { position: relative; overflow: hidden; }
+    .install-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+
+    .install-steps { display: flex; flex-direction: column; gap: 20px; }
+    .install-step {
+      display: flex; gap: 18px; align-items: flex-start;
+      padding: 22px; border-radius: var(--r);
+      background: var(--card); border: 1px solid var(--border);
+      transition: border-color .25s, background .25s;
+    }
+    .install-step:hover { background: var(--card-hover); border-color: var(--border-light); }
+    .install-num {
+      width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(124,111,239,.2); border: 1px solid rgba(124,111,239,.35);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800; color: var(--accent);
+    }
+    .install-step-text h4 { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .install-step-text p  { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+    .install-cta-box {
+      padding: 40px; border-radius: var(--r);
+      background: linear-gradient(135deg, rgba(124,111,239,.12), rgba(62,207,207,.06));
+      border: 1px solid rgba(124,111,239,.25);
+      text-align: center; display: flex; flex-direction: column;
+      align-items: center; gap: 20px;
+      box-shadow: 0 0 60px rgba(124,111,239,.08);
+    }
+    .install-cta-box h3 { font-size: 22px; font-weight: 800; color: var(--text); }
+    .install-cta-box p  { font-size: 14px; color: var(--text-muted); max-width: 260px; line-height: 1.65; }
+    .install-meta { font-size: 12px; color: var(--text-dim); }
+
+    /* ── Footer ────────────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+    }
+    .footer-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 20px;
+    }
+    .footer-logo { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; }
+    .footer-logo span { font-size: 20px; }
+    .footer-links { display: flex; gap: 24px; }
+    .footer-links a { font-size: 13px; color: var(--text-muted); transition: color .2s; }
+    .footer-links a:hover { color: var(--text); }
+    .footer-right { font-size: 12px; color: var(--text-dim); }
+
+    /* ── Scroll reveal ─────────────────────────────────────────────────────── */
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity .6s ease, transform .6s ease; }
+    .reveal.visible { opacity: 1; transform: none; }
+
+    /* ── Responsive ────────────────────────────────────────────────────────── */
+    @media (max-width: 840px) {
+      .hero-grid, .bindings-layout, .install-grid { grid-template-columns: 1fr; gap: 40px; }
+      .features-grid { grid-template-columns: 1fr 1fr; }
+      .steps { grid-template-columns: 1fr; }
+      .step-arrow { display: none; }
+      .nav-links { display: none; }
+    }
+    @media (max-width: 540px) {
+      .features-grid { grid-template-columns: 1fr; }
+      .hero-cta { flex-direction: column; }
+      .btn-primary, .btn-secondary { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Nav ──────────────────────────────────────────────────────────────────── -->
+<nav>
+  <div class="inner">
+    <div class="nav-logo"><span>⌨</span> MouseKeyboard</div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#bindings">Key Bindings</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/nicoespa/mouse-keyboard" class="nav-gh" target="_blank">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Hero ─────────────────────────────────────────────────────────────────── -->
+<section id="hero">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="container">
+    <div class="hero-grid">
+
+      <div class="hero-content">
+        <div class="hero-badge">Free & Open Source</div>
+        <h1 class="hero-title">
+          Your keyboard<br>is now your<br><span class="grad">mouse.</span>
+        </h1>
+        <p class="hero-sub">
+          MouseKeyboard lets you move the cursor, click, scroll, and drag
+          without ever leaving the keyboard — right on your Mac.
+        </p>
+        <div class="hero-cta">
+          <a href="https://github.com/nicoespa/mouse-keyboard/releases/latest" class="btn-primary" target="_blank">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12l-4-4h2.5V2h3v6H12L8 12zm-5 2h10v1.5H3V14z"/></svg>
+            Download for Mac
+          </a>
+          <a href="https://github.com/nicoespa/mouse-keyboard" class="btn-secondary" target="_blank">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+        <p class="hero-meta">macOS 13+ <span>·</span> Free forever <span>·</span> MIT License</p>
+      </div>
+
+      <!-- Animated keyboard demo -->
+      <div class="demo-wrap">
+        <div class="mini-screen">
+          <div class="screen-bar">
+            <div class="screen-dot"></div>
+            <div class="screen-dot"></div>
+            <div class="screen-dot"></div>
+          </div>
+          <div class="screen-body">
+            <div id="cursor">
+              <svg viewBox="0 0 16 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1 1l13 8-6.5 1.5L5 19 1 1z" fill="white" stroke="#7c6fef" stroke-width="1.5"/>
+              </svg>
+            </div>
+            <div id="click-ripple"></div>
+          </div>
+        </div>
+
+        <div class="kb">
+          <div class="kb-row">
+            <div class="key" id="k-q">Q</div>
+            <div class="key" id="k-w">W</div>
+            <div class="key" id="k-e">E</div>
+            <div class="key" id="k-r">R</div>
+            <div class="key spacer" style="min-width:10px"></div>
+          </div>
+          <div class="kb-row">
+            <div class="key" id="k-a">A</div>
+            <div class="key" id="k-s">S</div>
+            <div class="key" id="k-d">D</div>
+            <div class="key" id="k-f">F</div>
+            <div class="key spacer" style="min-width:10px"></div>
+          </div>
+          <div class="kb-row">
+            <div class="key xl" id="k-cmd">⌘ Right</div>
+            <div class="key xl" id="k-space">Space</div>
+          </div>
+        </div>
+
+        <div class="demo-label" id="demo-label">Hold the activation key to enter mouse mode</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── Features ──────────────────────────────────────────────────────────────── -->
+<section id="features" class="section">
+  <div class="container">
+    <div class="section-header centered reveal">
+      <div class="section-tag">Features</div>
+      <h2 class="section-title">Everything your mouse can do</h2>
+      <p class="section-sub">One activation key. Full mouse control. No hardware required.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feat-card reveal">
+        <div class="feat-icon">🎯</div>
+        <div class="feat-title">Smooth Cursor Movement</div>
+        <p class="feat-desc">Velocity-based movement with natural acceleration. The cursor picks up speed as you hold the key and stops smoothly when you release.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">🖱️</div>
+        <div class="feat-title">Click & Drag</div>
+        <p class="feat-desc">Press the click key to click. Hold it while moving to drag — resize windows, select text, rearrange files, all without a mouse.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">📜</div>
+        <div class="feat-title">Smooth Scrolling</div>
+        <p class="feat-desc">Scroll any page or document with dedicated scroll keys. Speed scales with how long you hold, just like a real scroll wheel.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">⚡</div>
+        <div class="feat-title">Turbo Mode</div>
+        <p class="feat-desc">Hold Shift alongside any movement or scroll key to jump to 3× speed. Great for crossing a large display quickly.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">⚙️</div>
+        <div class="feat-title">Fully Configurable</div>
+        <p class="feat-desc">Every key binding is customizable. Change the activation key to any key on your keyboard. Adjust speed and scroll rates with sliders.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon">🔒</div>
+        <div class="feat-title">Private by Design</div>
+        <p class="feat-desc">No internet connection. No telemetry. No analytics. Everything runs locally. The source code is open for anyone to inspect.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Bindings ───────────────────────────────────────────────────────────────── -->
+<section id="bindings" class="section">
+  <div class="blob blob-1" style="top:auto;bottom:-200px;left:auto;right:-200px;opacity:.5"></div>
+  <div class="container">
+    <div class="bindings-layout">
+      <div>
+        <div class="section-header reveal">
+          <div class="section-tag">Key Bindings</div>
+          <h2 class="section-title">Sensible defaults,<br>your way</h2>
+          <p class="section-sub">Every binding can be changed from the settings panel. These are the defaults you get out of the box.</p>
+        </div>
+        <div class="bind-note reveal">
+          <strong>Activation key</strong> — hold <strong>Right ⌘</strong> to enter mouse mode. Release to go back to normal typing instantly. Any key can be used as the activation key.
+        </div>
+      </div>
+
+      <div class="reveal">
+        <table class="bind-table">
+          <thead>
+            <tr><th>Action</th><th>Keys</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Activate mouse mode</td>
+              <td><div class="bind-keys"><span class="kbadge accent">⌘R</span></div></td>
+            </tr>
+            <tr>
+              <td>Move cursor</td>
+              <td><div class="bind-keys">
+                <span class="kbadge">W</span>
+                <span class="kbadge">A</span>
+                <span class="kbadge">S</span>
+                <span class="kbadge">D</span>
+              </div></td>
+            </tr>
+            <tr>
+              <td>Move cursor (alt)</td>
+              <td><div class="bind-keys">
+                <span class="kbadge">↑</span>
+                <span class="kbadge">←</span>
+                <span class="kbadge">↓</span>
+                <span class="kbadge">→</span>
+              </div></td>
+            </tr>
+            <tr>
+              <td>Turbo speed</td>
+              <td><div class="bind-keys"><span class="kbadge">⇧ Shift</span></div></td>
+            </tr>
+            <tr>
+              <td>Left click / Drag</td>
+              <td><div class="bind-keys"><span class="kbadge teal">Space</span></div></td>
+            </tr>
+            <tr>
+              <td>Right click</td>
+              <td><div class="bind-keys"><span class="kbadge teal">F</span></div></td>
+            </tr>
+            <tr>
+              <td>Scroll up</td>
+              <td><div class="bind-keys"><span class="kbadge">E</span></div></td>
+            </tr>
+            <tr>
+              <td>Scroll down</td>
+              <td><div class="bind-keys"><span class="kbadge">Q</span></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── How it works ──────────────────────────────────────────────────────────── -->
+<section id="how" class="section">
+  <div class="container">
+    <div class="section-header centered reveal">
+      <div class="section-tag">How it works</div>
+      <h2 class="section-title">Three steps, every time</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-num">1</div>
+        <div class="step-title">Hold the activation key</div>
+        <p class="step-desc">Hold your configured key (default: Right ⌘). The menu bar icon changes to 🖱 to confirm mouse mode is active.</p>
+        <div class="step-arrow">→</div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">2</div>
+        <div class="step-title">Move, click, or scroll</div>
+        <p class="step-desc">Use WASD or arrow keys to move the cursor. Press Space to click. Hold Space while moving to drag. Use E/Q to scroll.</p>
+        <div class="step-arrow">→</div>
+      </div>
+      <div class="step reveal">
+        <div class="step-num">3</div>
+        <div class="step-title">Release to return</div>
+        <p class="step-desc">Let go of the activation key and you're back to normal typing instantly. Zero friction, zero delay.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Install ───────────────────────────────────────────────────────────────── -->
+<section id="install" class="section">
+  <div class="blob blob-2" style="top:auto;bottom:-100px;left:-100px;right:auto;opacity:.5"></div>
+  <div class="container">
+    <div class="install-grid">
+
+      <div>
+        <div class="section-header reveal">
+          <div class="section-tag">Installation</div>
+          <h2 class="section-title">Up and running<br>in seconds</h2>
+        </div>
+        <div class="install-steps">
+          <div class="install-step reveal">
+            <div class="install-num">1</div>
+            <div class="install-step-text">
+              <h4>Download & unzip</h4>
+              <p>Download <code>MouseKeyboard.zip</code> from the latest release and unzip it.</p>
+            </div>
+          </div>
+          <div class="install-step reveal">
+            <div class="install-num">2</div>
+            <div class="install-step-text">
+              <h4>Move to Applications</h4>
+              <p>Drag <code>MouseKeyboard.app</code> to your Applications folder.</p>
+            </div>
+          </div>
+          <div class="install-step reveal">
+            <div class="install-num">3</div>
+            <div class="install-step-text">
+              <h4>Grant Accessibility permission</h4>
+              <p>Open the app and follow the prompt to grant Accessibility in System Settings → Privacy & Security. Quit and reopen once done.</p>
+            </div>
+          </div>
+          <div class="install-step reveal">
+            <div class="install-num">4</div>
+            <div class="install-step-text">
+              <h4>You're done</h4>
+              <p>The ⌨ icon appears in your menu bar. Hold Right ⌘ and start moving.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="install-cta-box reveal">
+        <div style="font-size:56px">⌨</div>
+        <h3>MouseKeyboard</h3>
+        <p>Free, open-source, and built for macOS 13 or later.</p>
+        <a href="https://github.com/nicoespa/mouse-keyboard/releases/latest" class="btn-primary" target="_blank" style="width:100%;justify-content:center">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12l-4-4h2.5V2h3v6H12L8 12zm-5 2h10v1.5H3V14z"/></svg>
+          Download latest release
+        </a>
+        <a href="https://github.com/nicoespa/mouse-keyboard" class="btn-secondary" target="_blank" style="width:100%;justify-content:center">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          View source on GitHub
+        </a>
+        <p class="install-meta">macOS 13 Ventura or later &nbsp;·&nbsp; MIT License &nbsp;·&nbsp; No signup required</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ────────────────────────────────────────────────────────────────── -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-logo"><span>⌨</span> MouseKeyboard</div>
+      <div class="footer-links">
+        <a href="https://github.com/nicoespa/mouse-keyboard" target="_blank">GitHub</a>
+        <a href="https://github.com/nicoespa/mouse-keyboard/releases" target="_blank">Releases</a>
+        <a href="https://github.com/nicoespa/mouse-keyboard/blob/main/LICENSE" target="_blank">License</a>
+      </div>
+      <div class="footer-right">Built with Swift · MIT License</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // ── Keyboard animation ────────────────────────────────────────────────────
+
+  const cursor = document.getElementById('cursor');
+  const label  = document.getElementById('demo-label');
+  const ripple = document.getElementById('click-ripple');
+  const screen = document.querySelector('.screen-body');
+
+  // Cursor starts center-ish of the screen body
+  let cx = 45, cy = 40;   // percentages within screen-body
+  setCursor(cx, cy);
+
+  function setCursor(x, y) {
+    cursor.style.left = x + '%';
+    cursor.style.top  = y + '%';
+  }
+
+  function litKey(id, type = 'lit') {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add(type, 'pressed');
+    setTimeout(() => el.classList.remove('pressed'), 120);
+    return el;
+  }
+
+  function unlitKey(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('lit', 'lit-2');
+  }
+
+  function showRipple(x, y) {
+    ripple.style.left    = x + '%';
+    ripple.style.top     = y + '%';
+    ripple.style.width   = '0px';
+    ripple.style.height  = '0px';
+    ripple.style.opacity = '1';
+    ripple.style.transition = 'none';
+    void ripple.offsetWidth;
+    ripple.style.transition = 'width .4s ease, height .4s ease, opacity .4s ease';
+    ripple.style.width   = '60px';
+    ripple.style.height  = '60px';
+    ripple.style.opacity = '0';
+  }
+
+  function setLabel(html) { label.innerHTML = html; }
+
+  const steps = [
+    // Step 1: activate
+    () => {
+      litKey('k-cmd');
+      setLabel('<strong>Hold ⌘ Right</strong> — mouse mode activates');
+    },
+    // Step 2: move up
+    () => {
+      litKey('k-w');
+      cy -= 18; setCursor(cx, cy);
+      setLabel('Press <strong>W</strong> — cursor moves up');
+    },
+    // Step 3: move right
+    () => {
+      litKey('k-d');
+      cx += 22; setCursor(cx, cy);
+      setLabel('Press <strong>D</strong> — cursor moves right');
+    },
+    // Step 4: click
+    () => {
+      litKey('k-space', 'lit-2');
+      showRipple(cx, cy);
+      setLabel('<strong>Space</strong> — left click');
+    },
+    // Step 5: scroll
+    () => {
+      litKey('k-e');
+      setLabel('<strong>E</strong> — scroll up');
+    },
+    // Step 6: move left + down
+    () => {
+      litKey('k-a');
+      litKey('k-s');
+      cx -= 14; cy += 12; setCursor(cx, cy);
+      setLabel('<strong>A + S</strong> — diagonal movement');
+    },
+    // Step 7: deactivate
+    () => {
+      unlitKey('k-cmd'); unlitKey('k-w'); unlitKey('k-d');
+      unlitKey('k-space'); unlitKey('k-e'); unlitKey('k-a'); unlitKey('k-s');
+      setLabel('Release the key — back to normal typing');
+    },
+    // Reset
+    () => {
+      cx = 45; cy = 40; setCursor(cx, cy);
+    }
+  ];
+
+  let stepIdx = 0;
+  const delays = [800, 900, 900, 800, 700, 900, 1000, 600];
+
+  function runDemo() {
+    const fn = steps[stepIdx % steps.length];
+    fn();
+    const delay = delays[stepIdx % delays.length];
+    stepIdx++;
+    setTimeout(runDemo, delay);
+  }
+
+  setTimeout(runDemo, 1200);
+
+  // ── Scroll reveal ─────────────────────────────────────────────────────────
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
+  }, { threshold: 0.12 });
+
+  document.querySelectorAll('.reveal').forEach((el, i) => {
+    el.style.transitionDelay = (i % 4) * 80 + 'ms';
+    observer.observe(el);
+  });
+</script>
+</body>
+</html>
