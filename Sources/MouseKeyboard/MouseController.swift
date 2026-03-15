@@ -34,18 +34,22 @@ class MouseController {
     func mouseDown(_ button: CGMouseButton) {
         let pos  = currentCGPos()
         let type: CGEventType = button == .left ? .leftMouseDown : .rightMouseDown
-        CGEvent(mouseEventSource: nil, mouseType: type,
-                mouseCursorPosition: pos, mouseButton: button)?
-            .post(tap: .cgSessionEventTap)
+        if let ev = CGEvent(mouseEventSource: nil, mouseType: type,
+                            mouseCursorPosition: pos, mouseButton: button) {
+            ev.flags = []
+            ev.post(tap: .cgSessionEventTap)
+        }
         if button == .left { isLeftDown = true } else { isRightDown = true }
     }
 
     func mouseUp(_ button: CGMouseButton) {
         let pos  = currentCGPos()
         let type: CGEventType = button == .left ? .leftMouseUp : .rightMouseUp
-        CGEvent(mouseEventSource: nil, mouseType: type,
-                mouseCursorPosition: pos, mouseButton: button)?
-            .post(tap: .cgSessionEventTap)
+        if let ev = CGEvent(mouseEventSource: nil, mouseType: type,
+                            mouseCursorPosition: pos, mouseButton: button) {
+            ev.flags = []
+            ev.post(tap: .cgSessionEventTap)
+        }
         if button == .left { isLeftDown = false } else { isRightDown = false }
     }
 

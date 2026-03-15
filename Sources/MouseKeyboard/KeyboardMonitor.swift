@@ -216,17 +216,17 @@ class KeyboardMonitor {
         if pressedKeys.contains(s.upKeyCode)    || pressedKeys.contains(arrowUp)    { tY -= speed }
         if pressedKeys.contains(s.downKeyCode)  || pressedKeys.contains(arrowDown)  { tY += speed }
 
-        velocityX += (tX - velocityX) * 0.25
-        velocityY += (tY - velocityY) * 0.25
-        if abs(velocityX) > 0.1 || abs(velocityY) > 0.1 {
+        velocityX = tX
+        velocityY = tY
+        if tX != 0 || tY != 0 {
             MouseController.shared.moveMouse(dx: velocityX, dy: velocityY)
         }
 
         var tS: Double = 0
         if pressedKeys.contains(s.scrollUpKeyCode)   { tS += scr }
         if pressedKeys.contains(s.scrollDownKeyCode) { tS -= scr }
-        scrollVelocity += (tS - scrollVelocity) * 0.3
-        if abs(scrollVelocity) > 0.1 { MouseController.shared.scroll(dy: scrollVelocity) }
+        scrollVelocity = tS
+        if tS != 0 { MouseController.shared.scroll(dy: scrollVelocity) }
     }
 }
 
