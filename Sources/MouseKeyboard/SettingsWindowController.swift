@@ -12,23 +12,23 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     weak var delegate: SettingsWindowDelegate?
 
-    private var keyButtons:      [String: NSButton] = [:]
-    private var sliderLabels:    [String: NSTextField] = [:]
+    private var keyButtons:   [String: KeyCapButton] = [:]
+    private var sliderLabels: [String: NSTextField]  = [:]
 
-    // Capture state (shared between modifier and regular key capture)
-    private var captureMonitorKeyDown:    Any?
+    private var captureMonitorKeyDown:      Any?
     private var captureMonitorFlagsChanged: Any?
-    private var captureKeyID: String?   // nil = modifier capture in progress
+    private var captureKeyID: String?
 
     convenience init() {
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable],
-            backing: .buffered,
-            defer: false
+            styleMask:   [.titled, .closable, .miniaturizable],
+            backing:     .buffered,
+            defer:       false
         )
-        win.title = "MouseKeyboard – Ajustes"
-        win.isReleasedWhenClosed = false
+        win.title                    = "MouseKeyboard"
+        win.isReleasedWhenClosed     = false
+        win.titlebarAppearsTransparent = false
         win.center()
         self.init(window: win)
         win.delegate = self
@@ -45,182 +45,375 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
     // ─────────────────────────────────────────────────────────────────────────
 
     private func buildUI() {
-        guard let content = window?.contentView else { return }
+        guard let contentView = window?.contentView else { return }
+
+        // Scroll view ─────────────────────────────────────────────────────────
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller   = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers    = true
+        scrollView.drawsBackground       = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+        ])
+
+        // Main vertical stack ─────────────────────────────────────────────────
+        let stack = NSStackView()
+        stack.orientation  = .vertical
+        stack.alignment    = .leading
+        stack.spacing      = 20
+        stack.edgeInsets   = NSEdgeInsets(top: 24, left: 20, bottom: 28, right: 20)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = stack
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+        ])
+
         let s = AppSettings.shared
-        var y: CGFloat = 578
 
-        func row(label: String, keyID: String, keyCode: Int) {
-            y -= 36
-            addKeyRow(in: content, label: label, keyID: keyID, keyCode: keyCode, y: y)
-        }
+        // ── Header ───────────────────────────────────────────────────────────
+        let header = buildHeader()
+        stack.addArrangedSubview(header)
+        header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
 
-        // ── Modifier key ─────────────────────────────────────────────────────
-        y -= 22
-        addSectionHeader("Tecla de Activación", in: content, y: y)
-        y -= 18
-        addSubtitle("Cualquier tecla — mantenela presionada para activar el modo mouse.", in: content, y: y)
-        y -= 36
-        addModifierCaptureRow(in: content, y: y)
-
-        y -= 14; addHRule(in: content, y: y)
+        // ── Activation Key ───────────────────────────────────────────────────
+        let activationSection = buildSection(
+            title:    "Tecla de Activación",
+            subtitle: "Mantenela presionada para activar el modo mouse.",
+            rows:     [buildModifierRow()]
+        )
+        stack.addArrangedSubview(activationSection)
+        activationSection.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
 
         // ── Movement ─────────────────────────────────────────────────────────
-        y -= 22
-        addSectionHeader("Movimiento", in: content, y: y)
-        y -= 16
-        addSubtitle("Las flechas del teclado siempre funcionan como alternativa.", in: content, y: y)
-
-        row(label: "Mover arriba",    keyID: "upKeyCode",    keyCode: s.upKeyCode)
-        row(label: "Mover abajo",     keyID: "downKeyCode",  keyCode: s.downKeyCode)
-        row(label: "Mover izquierda", keyID: "leftKeyCode",  keyCode: s.leftKeyCode)
-        row(label: "Mover derecha",   keyID: "rightKeyCode", keyCode: s.rightKeyCode)
-
-        y -= 14; addHRule(in: content, y: y)
+        let movementSection = buildSection(
+            title:    "Movimiento",
+            subtitle: "Las flechas del teclado siempre funcionan como alternativa.",
+            rows: [
+                buildKeyRow(label: "Mover arriba",    keyID: "upKeyCode",    keyCode: s.upKeyCode),
+                buildKeyRow(label: "Mover abajo",     keyID: "downKeyCode",  keyCode: s.downKeyCode),
+                buildKeyRow(label: "Mover izquierda", keyID: "leftKeyCode",  keyCode: s.leftKeyCode),
+                buildKeyRow(label: "Mover derecha",   keyID: "rightKeyCode", keyCode: s.rightKeyCode),
+            ]
+        )
+        stack.addArrangedSubview(movementSection)
+        movementSection.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
 
         // ── Actions ──────────────────────────────────────────────────────────
-        y -= 22
-        addSectionHeader("Acciones", in: content, y: y)
-        y -= 16
-        addSubtitle("Mantener la tecla de click + mover = arrastrar.", in: content, y: y)
-
-        row(label: "Click izquierdo", keyID: "leftClickKeyCode",  keyCode: s.leftClickKeyCode)
-        row(label: "Click derecho",   keyID: "rightClickKeyCode", keyCode: s.rightClickKeyCode)
-        row(label: "Scroll arriba",   keyID: "scrollUpKeyCode",   keyCode: s.scrollUpKeyCode)
-        row(label: "Scroll abajo",    keyID: "scrollDownKeyCode", keyCode: s.scrollDownKeyCode)
-
-        y -= 14; addHRule(in: content, y: y)
+        let actionsSection = buildSection(
+            title:    "Acciones",
+            subtitle: "Mantener la tecla de click + mover activa el arrastre.",
+            rows: [
+                buildKeyRow(label: "Click izquierdo", keyID: "leftClickKeyCode",  keyCode: s.leftClickKeyCode),
+                buildKeyRow(label: "Click derecho",   keyID: "rightClickKeyCode", keyCode: s.rightClickKeyCode),
+                buildKeyRow(label: "Scroll arriba",   keyID: "scrollUpKeyCode",   keyCode: s.scrollUpKeyCode),
+                buildKeyRow(label: "Scroll abajo",    keyID: "scrollDownKeyCode", keyCode: s.scrollDownKeyCode),
+            ]
+        )
+        stack.addArrangedSubview(actionsSection)
+        actionsSection.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
 
         // ── Speed ────────────────────────────────────────────────────────────
-        y -= 22
-        addSectionHeader("Velocidad", in: content, y: y)
-
-        y -= 36
-        addSliderRow(in: content, label: "Velocidad normal:", sliderID: "normalSpeed",
-                     value: s.normalSpeed, min: 3, max: 40, unit: "px", y: y)
-        y -= 36
-        addSliderRow(in: content, label: "Multiplicador rápido (+ ⇧):", sliderID: "fastMultiplier",
-                     value: s.fastMultiplier, min: 1.5, max: 8, unit: "×", y: y)
-        y -= 36
-        addSliderRow(in: content, label: "Velocidad de scroll:", sliderID: "scrollSpeed",
-                     value: s.scrollSpeed, min: 1, max: 30, unit: "px", y: y)
-
-        y -= 14; addHRule(in: content, y: y)
+        let speedSection = buildSection(
+            title:    "Velocidad",
+            subtitle: nil,
+            rows: [
+                buildSliderRow(label: "Velocidad normal",         sliderID: "normalSpeed",    value: s.normalSpeed,    min: 3,   max: 40, unit: "px"),
+                buildSliderRow(label: "Multiplicador rápido (⇧)", sliderID: "fastMultiplier", value: s.fastMultiplier, min: 1.5, max: 8,  unit: "×"),
+                buildSliderRow(label: "Velocidad de scroll",      sliderID: "scrollSpeed",    value: s.scrollSpeed,    min: 1,   max: 30, unit: "px"),
+            ]
+        )
+        stack.addArrangedSubview(speedSection)
+        speedSection.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
 
         // ── Reset ────────────────────────────────────────────────────────────
-        y -= 36
-        let resetBtn = NSButton(title: "Restaurar valores por defecto",
-                                target: self, action: #selector(resetDefaults))
-        resetBtn.bezelStyle = .rounded
-        resetBtn.frame = NSRect(x: 130, y: y, width: 200, height: 26)
-        content.addSubview(resetBtn)
+        let resetBtn = NSButton(title: "Restaurar valores por defecto", target: self, action: #selector(resetDefaults))
+        resetBtn.bezelStyle  = .rounded
+        resetBtn.controlSize = .regular
+        resetBtn.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(resetBtn)
+        resetBtn.centerXAnchor.constraint(equalTo: stack.centerXAnchor).isActive = true
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // MARK: - Header
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private func buildHeader() -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let icon = NSImageView()
+        if let img = NSImage(systemSymbolName: "cursorarrow.rays", accessibilityDescription: nil) {
+            let cfg = NSImage.SymbolConfiguration(pointSize: 28, weight: .light)
+            icon.image = img.withSymbolConfiguration(cfg)
+        }
+        icon.imageScaling = .scaleProportionallyDown
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(icon)
+
+        let title = NSTextField(labelWithString: "MouseKeyboard")
+        title.font      = NSFont.systemFont(ofSize: 17, weight: .semibold)
+        title.textColor = .labelColor
+        title.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(title)
+
+        let subtitle = NSTextField(labelWithString: "Controlá el mouse desde el teclado")
+        subtitle.font      = NSFont.systemFont(ofSize: 12)
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(subtitle)
+
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            icon.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 36),
+            icon.heightAnchor.constraint(equalToConstant: 36),
+
+            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 12),
+            title.topAnchor.constraint(equalTo: container.topAnchor),
+            title.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+
+            subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
+            subtitle.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            subtitle.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        return container
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // MARK: - Section builder
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private func buildSection(title: String, subtitle: String?, rows: [NSView]) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        // Section title label
+        let titleLabel = NSTextField(labelWithString: title.uppercased())
+        titleLabel.font      = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(titleLabel)
+
+        // Optional subtitle
+        var subtitleLabel: NSTextField?
+        if let text = subtitle {
+            let lbl = NSTextField(labelWithString: text)
+            lbl.font      = NSFont.systemFont(ofSize: 11)
+            lbl.textColor = .tertiaryLabelColor
+            lbl.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(lbl)
+            subtitleLabel = lbl
+        }
+
+        // Card (rounded box)
+        let card = NSView()
+        card.wantsLayer              = true
+        card.layer?.cornerRadius     = 10
+        card.layer?.borderWidth      = 0.5
+        card.layer?.borderColor      = NSColor.separatorColor.cgColor
+        card.layer?.backgroundColor  = NSColor.controlBackgroundColor.cgColor
+        card.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(card)
+
+        // Rows inside card with separators
+        var prevBottom: NSLayoutYAxisAnchor = card.topAnchor
+        for (i, row) in rows.enumerated() {
+            row.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(row)
+
+            if i > 0 {
+                let sep = NSBox()
+                sep.boxType = .separator
+                sep.translatesAutoresizingMaskIntoConstraints = false
+                card.addSubview(sep)
+                NSLayoutConstraint.activate([
+                    sep.topAnchor.constraint(equalTo: prevBottom),
+                    sep.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+                    sep.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+                    sep.heightAnchor.constraint(equalToConstant: 1),
+                    row.topAnchor.constraint(equalTo: sep.bottomAnchor),
+                ])
+            } else {
+                row.topAnchor.constraint(equalTo: prevBottom).isActive = true
+            }
+
+            NSLayoutConstraint.activate([
+                row.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+                row.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+                row.heightAnchor.constraint(equalToConstant: 44),
+            ])
+            prevBottom = row.bottomAnchor
+        }
+        rows.last?.bottomAnchor.constraint(equalTo: card.bottomAnchor).isActive = true
+
+        // Title constraints
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: container.topAnchor),
+            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
+            titleLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+
+        if let sub = subtitleLabel {
+            NSLayoutConstraint.activate([
+                sub.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
+                sub.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
+                sub.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                card.topAnchor.constraint(equalTo: sub.bottomAnchor, constant: 8),
+            ])
+        } else {
+            card.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8).isActive = true
+        }
+
+        NSLayoutConstraint.activate([
+            card.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            card.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            card.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        return container
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // MARK: - Row builders
     // ─────────────────────────────────────────────────────────────────────────
 
-    private func addSectionHeader(_ text: String, in view: NSView, y: CGFloat) {
-        let tf = NSTextField(labelWithString: text.uppercased())
-        tf.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-        tf.textColor = .secondaryLabelColor
-        tf.frame = NSRect(x: 20, y: y, width: 420, height: 16)
-        view.addSubview(tf)
-    }
+    private func buildModifierRow() -> NSView {
+        let s   = AppSettings.shared
+        let row = NSView()
+        row.translatesAutoresizingMaskIntoConstraints = false
 
-    private func addSubtitle(_ text: String, in view: NSView, y: CGFloat) {
-        let tf = NSTextField(labelWithString: text)
-        tf.font = NSFont.systemFont(ofSize: 11)
-        tf.textColor = .tertiaryLabelColor
-        tf.frame = NSRect(x: 20, y: y, width: 420, height: 14)
-        view.addSubview(tf)
-    }
+        let label = makeLabel("Activar con", size: 13)
+        row.addSubview(label)
 
-    private func addHRule(in view: NSView, y: CGFloat) {
-        let box = NSBox(); box.boxType = .separator
-        box.frame = NSRect(x: 20, y: y, width: 420, height: 1)
-        view.addSubview(box)
-    }
+        let hint = makeLabel(modifierTypeHint(), size: 11)
+        hint.identifier = NSUserInterfaceItemIdentifier("modifierHint")
+        hint.textColor  = .tertiaryLabelColor
+        row.addSubview(hint)
 
-    /// Modifier key row: label + key-badge capture button + type hint
-    private func addModifierCaptureRow(in view: NSView, y: CGFloat) {
-        let s = AppSettings.shared
-
-        let lbl = NSTextField(labelWithString: "Activar con:")
-        lbl.font = NSFont.systemFont(ofSize: 13)
-        lbl.frame = NSRect(x: 20, y: y + 4, width: 200, height: 20)
-        view.addSubview(lbl)
-
-        let btn = makeKeyButton(title: keyName(for: s.modifierKeyCode), keyID: "modifier")
-        btn.frame = NSRect(x: 350, y: y, width: 90, height: 28)
+        let btn = makeKeyCapButton(title: keyName(for: s.modifierKeyCode), keyID: "modifier")
         btn.action = #selector(modifierButtonClicked(_:))
-        view.addSubview(btn)
+        row.addSubview(btn)
         keyButtons["modifier"] = btn
 
-        // Type hint (regular / hardware modifier)
-        let hint = NSTextField(labelWithString: modifierTypeHint())
-        hint.identifier = NSUserInterfaceItemIdentifier("modifierHint")
-        hint.font = NSFont.systemFont(ofSize: 11)
-        hint.textColor = .tertiaryLabelColor
-        hint.frame = NSRect(x: 230, y: y + 6, width: 110, height: 16)
-        hint.alignment = .right
-        view.addSubview(hint)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+            label.centerYAnchor.constraint(equalTo: row.centerYAnchor, constant: -9),
+
+            hint.leadingAnchor.constraint(equalTo: label.leadingAnchor),
+            hint.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 2),
+
+            btn.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -16),
+            btn.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            btn.widthAnchor.constraint(greaterThanOrEqualToConstant: 56),
+            btn.heightAnchor.constraint(equalToConstant: 26),
+        ])
+
+        return row
     }
 
-    private func modifierTypeHint() -> String {
-        let s = AppSettings.shared
-        return s.modifierIsHardwareModifier ? "tecla modificadora" : "tecla regular"
-    }
+    private func buildKeyRow(label labelText: String, keyID: String, keyCode: Int) -> NSView {
+        let row = NSView()
+        row.translatesAutoresizingMaskIntoConstraints = false
 
-    /// A key-binding row with a capture button.
-    private func addKeyRow(in view: NSView, label: String, keyID: String, keyCode: Int, y: CGFloat) {
-        let lbl = NSTextField(labelWithString: label)
-        lbl.font = NSFont.systemFont(ofSize: 13)
-        lbl.frame = NSRect(x: 20, y: y + 4, width: 220, height: 20)
-        view.addSubview(lbl)
+        let label = makeLabel(labelText, size: 13)
+        row.addSubview(label)
 
-        let btn = makeKeyButton(title: keyName(for: keyCode), keyID: keyID)
-        btn.frame = NSRect(x: 350, y: y, width: 90, height: 28)
-        view.addSubview(btn)
+        let btn = makeKeyCapButton(title: keyName(for: keyCode), keyID: keyID)
+        row.addSubview(btn)
         keyButtons[keyID] = btn
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+            label.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+
+            btn.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -16),
+            btn.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            btn.widthAnchor.constraint(greaterThanOrEqualToConstant: 56),
+            btn.heightAnchor.constraint(equalToConstant: 26),
+        ])
+
+        return row
     }
 
-    private func addSliderRow(in view: NSView, label: String, sliderID: String,
-                               value: Double, min: Double, max: Double, unit: String, y: CGFloat) {
-        let lbl = NSTextField(labelWithString: label)
-        lbl.font = NSFont.systemFont(ofSize: 13)
-        lbl.frame = NSRect(x: 20, y: y + 5, width: 210, height: 20)
-        view.addSubview(lbl)
+    private func buildSliderRow(label labelText: String, sliderID: String,
+                                value: Double, min: Double, max: Double, unit: String) -> NSView {
+        let row = NSView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        let label = makeLabel(labelText, size: 13)
+        row.addSubview(label)
 
         let slider = NSSlider(value: value, minValue: min, maxValue: max,
                               target: self, action: #selector(sliderChanged(_:)))
         slider.isContinuous = true
         slider.identifier   = NSUserInterfaceItemIdentifier(sliderID)
         slider.toolTip      = unit
-        slider.frame = NSRect(x: 235, y: y + 4, width: 160, height: 22)
-        view.addSubview(slider)
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(slider)
 
-        let valLbl = NSTextField(labelWithString: formatSlider(value: value, unit: unit))
-        valLbl.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        valLbl.alignment = .right
-        valLbl.frame = NSRect(x: 400, y: y + 5, width: 50, height: 20)
-        view.addSubview(valLbl)
-        sliderLabels[sliderID] = valLbl
+        let valLabel = NSTextField(labelWithString: formatSlider(value: value, unit: unit))
+        valLabel.font        = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        valLabel.textColor   = .secondaryLabelColor
+        valLabel.alignment   = .right
+        valLabel.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(valLabel)
+        sliderLabels[sliderID] = valLabel
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+            label.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            label.widthAnchor.constraint(equalToConstant: 190),
+
+            valLabel.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -16),
+            valLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            valLabel.widthAnchor.constraint(equalToConstant: 52),
+
+            slider.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 8),
+            slider.trailingAnchor.constraint(equalTo: valLabel.leadingAnchor, constant: -8),
+            slider.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+        ])
+
+        return row
     }
 
-    private func makeKeyButton(title: String, keyID: String) -> NSButton {
-        let btn = NSButton(title: title, target: self, action: #selector(keyButtonClicked(_:)))
-        btn.bezelStyle = .rounded
-        btn.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+    // ─────────────────────────────────────────────────────────────────────────
+    // MARK: - Control factories
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private func makeLabel(_ text: String, size: CGFloat) -> NSTextField {
+        let tf = NSTextField(labelWithString: text)
+        tf.font = NSFont.systemFont(ofSize: size)
+        tf.translatesAutoresizingMaskIntoConstraints = false
+        return tf
+    }
+
+    private func makeKeyCapButton(title: String, keyID: String) -> KeyCapButton {
+        let btn = KeyCapButton(title: title)
+        btn.target     = self
+        btn.action     = #selector(keyButtonClicked(_:))
         btn.identifier = NSUserInterfaceItemIdentifier(keyID)
-        btn.toolTip = "Clic para reasignar"
-        // Make it look like a key badge
-        btn.wantsLayer = true
-        btn.layer?.cornerRadius = 6
+        btn.toolTip    = "Clic para reasignar"
+        btn.translatesAutoresizingMaskIntoConstraints = false
         return btn
     }
 
     private func formatSlider(value: Double, unit: String) -> String {
         unit == "×" ? String(format: "%.1f×", value) : String(format: "%.0f px", value)
+    }
+
+    private func modifierTypeHint() -> String {
+        AppSettings.shared.modifierIsHardwareModifier ? "tecla modificadora" : "tecla regular"
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -253,7 +446,7 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func resetDefaults() {
         let alert = NSAlert()
-        alert.messageText = "¿Restaurar valores por defecto?"
+        alert.messageText     = "¿Restaurar valores por defecto?"
         alert.informativeText = "Se restablecerán todas las teclas y velocidades."
         alert.addButton(withTitle: "Restaurar")
         alert.addButton(withTitle: "Cancelar")
@@ -261,7 +454,8 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
         AppSettings.shared.resetToDefaults()
         monitor?.reload()
         window?.contentView?.subviews.forEach { $0.removeFromSuperview() }
-        keyButtons.removeAll(); sliderLabels.removeAll()
+        keyButtons.removeAll()
+        sliderLabels.removeAll()
         buildUI()
     }
 
@@ -278,7 +472,6 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
         captureMonitorKeyDown = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak button] event in
             guard let self = self, let button = button else { return event }
             let code = Int(event.keyCode)
-            // Ignore hardware modifier keys (they don't generate keyDown)
             guard !AppSettings.hardwareModifierKeyCodes.contains(code) else { return event }
             self.applyRegularCapture(keyID: keyID, keyCode: code, button: button)
             return nil
@@ -288,34 +481,32 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func applyRegularCapture(keyID: String, keyCode: Int, button: NSButton) {
         let s = AppSettings.shared
         switch keyID {
-        case "upKeyCode":          s.upKeyCode           = keyCode
-        case "downKeyCode":        s.downKeyCode         = keyCode
-        case "leftKeyCode":        s.leftKeyCode         = keyCode
-        case "rightKeyCode":       s.rightKeyCode        = keyCode
-        case "leftClickKeyCode":   s.leftClickKeyCode    = keyCode
-        case "rightClickKeyCode":  s.rightClickKeyCode   = keyCode
-        case "scrollUpKeyCode":    s.scrollUpKeyCode     = keyCode
-        case "scrollDownKeyCode":  s.scrollDownKeyCode   = keyCode
+        case "upKeyCode":         s.upKeyCode          = keyCode
+        case "downKeyCode":       s.downKeyCode        = keyCode
+        case "leftKeyCode":       s.leftKeyCode        = keyCode
+        case "rightKeyCode":      s.rightKeyCode       = keyCode
+        case "leftClickKeyCode":  s.leftClickKeyCode   = keyCode
+        case "rightClickKeyCode": s.rightClickKeyCode  = keyCode
+        case "scrollUpKeyCode":   s.scrollUpKeyCode    = keyCode
+        case "scrollDownKeyCode": s.scrollDownKeyCode  = keyCode
         default: break
         }
         s.save()
         monitor?.reload()
-        button.title = keyName(for: keyCode)
-        button.isHighlighted = false
+        (button as? KeyCapButton)?.setNormal(title: keyName(for: keyCode))
         cancelCapture()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // MARK: - Modifier key capture (accepts any key, including hardware modifiers)
+    // MARK: - Modifier key capture
     // ─────────────────────────────────────────────────────────────────────────
 
     private func startModifierCapture(button: NSButton) {
         cancelCapture()
-        captureKeyID = nil  // signals "modifier capture mode"
+        captureKeyID = nil
         setButtonWaiting(button)
         monitor?.isCapturing = true
 
-        // Listen for regular key presses
         captureMonitorKeyDown = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak button] event in
             guard let self = self, let button = button else { return event }
             let code = Int(event.keyCode)
@@ -324,14 +515,12 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
             return nil
         }
 
-        // Also listen for hardware modifier key presses (flagsChanged)
         captureMonitorFlagsChanged = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self, weak button] event in
             guard let self = self, let button = button else { return event }
             let code = Int(event.keyCode)
             guard AppSettings.hardwareModifierKeyCodes.contains(code) else { return event }
-            guard code != 57 else { return event } // Skip Caps Lock (it's a toggle, not a hold)
+            guard code != 57 else { return event }
 
-            // Detect PRESS vs RELEASE using high-level NSEvent.ModifierFlags
             let f = event.modifierFlags
             let isPressed: Bool
             switch code {
@@ -352,12 +541,13 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func applyModifierCapture(keyCode: Int, rawMask: Int, button: NSButton) {
         AppSettings.shared.setModifierKey(keyCode: keyCode, rawMask: rawMask)
         monitor?.reload()
-        button.title = keyName(for: keyCode)
-        button.isHighlighted = false
-        // Update the type hint label
+        (button as? KeyCapButton)?.setNormal(title: keyName(for: keyCode))
         if let hint = window?.contentView?.subviews
-                        .compactMap({ $0 as? NSTextField })
-                        .first(where: { $0.identifier?.rawValue == "modifierHint" }) {
+                .compactMap({ $0 as? NSScrollView }).first?
+                .documentView?.subviews
+                .flatMap({ $0.subviews })
+                .compactMap({ $0 as? NSTextField })
+                .first(where: { $0.identifier?.rawValue == "modifierHint" }) {
             hint.stringValue = modifierTypeHint()
         }
         cancelCapture()
@@ -368,27 +558,20 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
     // ─────────────────────────────────────────────────────────────────────────
 
     private func setButtonWaiting(_ button: NSButton) {
-        button.title = "…"
-        button.isHighlighted = true
+        (button as? KeyCapButton)?.setCapturing()
     }
 
     private func cancelCapture() {
-        if let m = captureMonitorKeyDown       { NSEvent.removeMonitor(m); captureMonitorKeyDown = nil }
-        if let m = captureMonitorFlagsChanged  { NSEvent.removeMonitor(m); captureMonitorFlagsChanged = nil }
+        if let m = captureMonitorKeyDown      { NSEvent.removeMonitor(m); captureMonitorKeyDown = nil }
+        if let m = captureMonitorFlagsChanged { NSEvent.removeMonitor(m); captureMonitorFlagsChanged = nil }
         monitor?.isCapturing = false
 
-        // Restore button label if it's still showing "…"
         if let id = captureKeyID {
             if let btn = keyButtons[id] {
-                let code = currentKeyCode(for: id)
-                btn.title = keyName(for: code)
-                btn.isHighlighted = false
+                btn.setNormal(title: keyName(for: currentKeyCode(for: id)))
             }
-        } else if let btn = keyButtons["modifier"] {
-            if btn.title == "…" {
-                btn.title = keyName(for: AppSettings.shared.modifierKeyCode)
-                btn.isHighlighted = false
-            }
+        } else if let btn = keyButtons["modifier"], btn.isCapturing {
+            btn.setNormal(title: keyName(for: AppSettings.shared.modifierKeyCode))
         }
         captureKeyID = nil
     }
@@ -396,23 +579,80 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func currentKeyCode(for keyID: String) -> Int {
         let s = AppSettings.shared
         switch keyID {
-        case "upKeyCode":          return s.upKeyCode
-        case "downKeyCode":        return s.downKeyCode
-        case "leftKeyCode":        return s.leftKeyCode
-        case "rightKeyCode":       return s.rightKeyCode
-        case "leftClickKeyCode":   return s.leftClickKeyCode
-        case "rightClickKeyCode":  return s.rightClickKeyCode
-        case "scrollUpKeyCode":    return s.scrollUpKeyCode
-        case "scrollDownKeyCode":  return s.scrollDownKeyCode
-        default:                   return 0
+        case "upKeyCode":         return s.upKeyCode
+        case "downKeyCode":       return s.downKeyCode
+        case "leftKeyCode":       return s.leftKeyCode
+        case "rightKeyCode":      return s.rightKeyCode
+        case "leftClickKeyCode":  return s.leftClickKeyCode
+        case "rightClickKeyCode": return s.rightClickKeyCode
+        case "scrollUpKeyCode":   return s.scrollUpKeyCode
+        case "scrollDownKeyCode": return s.scrollDownKeyCode
+        default:                  return 0
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // MARK: - Helpers
-    // ─────────────────────────────────────────────────────────────────────────
-
     private var monitor: KeyboardMonitor? {
         (NSApp.delegate as? AppDelegate)?.keyboardMonitor
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - KeyCapButton
+// A button styled to resemble a keyboard key cap.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class KeyCapButton: NSButton {
+
+    private(set) var isCapturing = false
+
+    init(title: String) {
+        super.init(frame: .zero)
+        isBordered   = false
+        wantsLayer   = true
+        font         = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
+        alignment    = .center
+        self.title   = title
+        styleNormal()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func setNormal(title: String) {
+        isCapturing  = false
+        self.title   = title
+        styleNormal()
+    }
+
+    func setCapturing() {
+        isCapturing  = true
+        self.title   = "⌨ Escribí…"
+        styleCapturing()
+    }
+
+    private func styleNormal() {
+        layer?.backgroundColor = NSColor.controlColor.cgColor
+        layer?.cornerRadius    = 6
+        layer?.borderColor     = NSColor.separatorColor.withAlphaComponent(0.6).cgColor
+        layer?.borderWidth     = 0.5
+        layer?.shadowColor     = NSColor.black.cgColor
+        layer?.shadowOpacity   = 0.10
+        layer?.shadowRadius    = 0
+        layer?.shadowOffset    = CGSize(width: 0, height: -1.5)
+        layer?.masksToBounds   = false
+        contentTintColor       = .labelColor
+    }
+
+    private func styleCapturing() {
+        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
+        layer?.borderColor     = NSColor.controlAccentColor.cgColor
+        layer?.borderWidth     = 1.5
+        layer?.shadowOpacity   = 0
+        contentTintColor       = .controlAccentColor
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        // Re-apply on appearance change (dark/light mode switch)
+        if isCapturing { styleCapturing() } else { styleNormal() }
     }
 }
